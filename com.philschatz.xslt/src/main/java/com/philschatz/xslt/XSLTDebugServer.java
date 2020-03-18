@@ -102,6 +102,8 @@ public class XSLTDebugServer {
                     protocolServer.run();
                 } catch (IOException e) {
                     logger.log(Level.SEVERE, String.format("Socket connection exception: %s", e.toString()), e);
+                } catch (Throwable e) {
+                    logger.log(Level.SEVERE, String.format("Socket connection exception: %s", e.toString()), e);
                 } finally {
                     logger.info("Debug connection closed");
                 }
