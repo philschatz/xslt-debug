@@ -3,16 +3,23 @@ package com.philschatz.xslt;
 import net.sf.saxon.lib.TraceListener;
 import net.sf.saxon.trace.InstructionInfo;
 import net.sf.saxon.trace.LocationKind;
+import net.sf.saxon.trans.XPathException;
 import net.sf.saxon.Controller;
 import net.sf.saxon.expr.XPathContext;
+import net.sf.saxon.om.GroundedValue;
 import net.sf.saxon.om.Item;
 import net.sf.saxon.om.NodeInfo;
+import net.sf.saxon.om.Sequence;
 import net.sf.saxon.om.StandardNames;
+import net.sf.saxon.om.StructuredQName;
+
 import java.lang.String;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Stack;
 import net.sf.saxon.lib.Logger;
 
@@ -31,13 +38,13 @@ public class XSLTDebugTraceListener implements TraceListener {
   private final DebugContext context;
   public List<XSLTBreakpoint> breakpoints = new ArrayList<XSLTBreakpoint>();
 
-  private Stack<StackFrame> instructionStack = new Stack<StackFrame>();
-  private Stack<Item> nodeStack = new Stack<Item>();
+  private final Stack<StackFrame> instructionStack = new Stack<StackFrame>();
+  private final Stack<Item> nodeStack = new Stack<Item>();
 
-  private Object lock = new Object();
+  private final Object lock = new Object();
   private boolean paused;
 
-  public XSLTDebugTraceListener(DebugContext context) {
+  public XSLTDebugTraceListener(final DebugContext context) {
     this.context = context;
     System.out.println("****************************************");
   }
@@ -65,20 +72,22 @@ public class XSLTDebugTraceListener implements TraceListener {
     while (isPaused()) {
       try {
         Thread.sleep(100);
-      } catch (InterruptedException e) {
+      } catch (final InterruptedException e) {
         e.printStackTrace();
       }
     }
   }
 
-  public void addBreakpoints(List<XSLTBreakpoint> b) {
+  public void addBreakpoints(final List<XSLTBreakpoint> b) {
     synchronized (lock) {
       breakpoints.addAll(b);
     }
   }
 
   public Stack<StackFrame> getStackFrames() {
-    return instructionStack;
+    synchronized (lock) {
+      return instructionStack;
+    }
   }
 
   public void clear() {
@@ -96,13 +105,13 @@ public class XSLTDebugTraceListener implements TraceListener {
    * 
    * @param c Controller used
    */
-  public void open(Controller c) {
+  public void open(final Controller c) {
   }
 
   /**
    * Method that implements the output destination for SaxonEE/PE 9.7
    */
-  public void setOutputDestination(Logger logger) {
+  public void setOutputDestination(final Logger logger) {
   }
 
   /**
@@ -122,9 +131,11 @@ public class XSLTDebugTraceListener implements TraceListener {
    *                is to be retained, it must be copied.
    * @param context XPath context used
    */
-  public void enter(InstructionInfo info, XPathContext context) {
-    int lineNumber = info.getLineNumber();
-    int columnNumber = info.getColumnNumber();
+  public void enter(final InstructionInfo info, final XPathContext context) {
+    final int lineNumber = info.getLineNumber();
+    final int columnNumber = info.getColumnNumber();
+    // System.err.println(String.format("ENTERING %d:%d", lineNumber,
+    // columnNumber));
 
     // Get the current file URI
     String systemId = info.getSystemId();
@@ -133,13 +144,13 @@ public class XSLTDebugTraceListener implements TraceListener {
     URI systemIdUri;
     try {
       systemIdUri = new URI(systemId);
-    } catch (URISyntaxException e) {
+    } catch (final URISyntaxException e) {
       throw new RuntimeException(e);
     }
     systemId = systemIdUri.normalize().toString();
 
     String construct;
-    int constructType = info.getConstructType();
+    final int constructType = info.getConstructType();
     if (constructType < 1024) {
       construct = StandardNames.getClarkName(constructType);
     } else {
@@ -182,24 +193,65 @@ public class XSLTDebugTraceListener implements TraceListener {
       }
     }
 
-    Object i = context.getContextItem();
+    final Object i = context.getContextItem();
     NodeInfo node = null;
     if (i instanceof NodeInfo) {
       node = (NodeInfo) i;
     }
 
-    synchronized (lock) {
-      instructionStack.push(new StackFrame(systemId, lineNumber, columnNumber, construct, node));
+    // Compute all the variables:
+    final Map<String, GroundedValue> parameters = new HashMap<>();
+    int p = 0;
+    try {
+      context.getLocalParameters().materializeValues();
+    } catch (final XPathException e) {
+      this.context.getProtocolServer().sendEvent(Events.OutputEvent.createStderrOutput(e.getLocalizedMessage()));
+    }
+    for (final StructuredQName param : context.getLocalParameters().getParameterNames()) {
+      try {
+        if (param != null) {
+          final Sequence v = context.getLocalParameters().getValue(p);
+          parameters.put(param.getClarkName(), v.materialize());
+        } else {
+          parameters.put("NULLISHTHING_atleastone", null);
+        }
+        p++;
+      } catch (XPathException e) {
+        e.printStackTrace();
+      }
     }
 
-    for (XSLTBreakpoint b : breakpoints) {
+    final Map<String, GroundedValue> variables = new HashMap<>();
+    p = 0;
+    for (final Sequence v : context.getStackFrame().getStackFrameValues()) {
+      final String name = context.getStackFrame().getStackFrameMap().getVariableMap().get(p).getClarkName();
+      try {
+        if (v != null) {
+          variables.put(name, v.iterate().materialize());
+        } else {
+          variables.put(name, null);
+        }
+        p++;
+      } catch (XPathException e) {
+        e.printStackTrace();
+      }
+    }
+
+    synchronized (lock) {
+      instructionStack.push(new StackFrame(systemId, lineNumber, columnNumber, construct, node, parameters, variables));
+    }
+
+    for (final XSLTBreakpoint b : breakpoints) {
       if (b.path.equals(AdapterUtils.convertPath(systemId, true, false))
           && b.line == AdapterUtils.convertLineNumber(lineNumber, false, true)) {
+        // System.err.println(String.format("PAUSING %d:%d", lineNumber, columnNumber));
         this.context.getProtocolServer().sendEvent(new Events.StoppedEvent("breakpoint", 1));
         spinUntilUnpaused();
         break;
       }
     }
+
+    // System.err.println(String.format("ENTERED %d:%d", lineNumber, columnNumber));
   }
 
   /**
@@ -212,7 +264,9 @@ public class XSLTDebugTraceListener implements TraceListener {
    *                    start tag in the source stylesheet, not the line number of
    *                    the end tag.
    */
-  public void leave(InstructionInfo instruction) {
+  public void leave(final InstructionInfo instruction) {
+    // System.err.println(String.format("LEAVING %d:%d",
+    // instruction.getLineNumber(), instruction.getColumnNumber()));
     synchronized (lock) {
       instructionStack.pop();
     }
@@ -227,7 +281,7 @@ public class XSLTDebugTraceListener implements TraceListener {
    * @param currentItem the new current item. Item objects are not mutable; it is
    *                    safe to retain a reference to the Item for later use.
    */
-  public void startCurrentItem(Item currentItem) {
+  public void startCurrentItem(final Item currentItem) {
     synchronized (lock) {
       nodeStack.push(currentItem);
     }
@@ -244,25 +298,9 @@ public class XSLTDebugTraceListener implements TraceListener {
    *                    the corresponding startCurrentItem() call, though it will
    *                    not necessarily be the same actual object.
    */
-  public void endCurrentItem(Item currentItem) {
+  public void endCurrentItem(final Item currentItem) {
     synchronized (lock) {
       nodeStack.pop();
     }
-  }
-}
-
-class StackFrame {
-  public final String systemId;
-  public final int lineNumber;
-  public final int columnNumber;
-  public final String construct;
-  public final NodeInfo node;
-
-  StackFrame(String systemId, int lineNumber, int columnNumber, String construct, NodeInfo node) {
-    this.systemId = systemId;
-    this.lineNumber = lineNumber;
-    this.columnNumber = columnNumber;
-    this.construct = construct;
-    this.node = node;
   }
 }

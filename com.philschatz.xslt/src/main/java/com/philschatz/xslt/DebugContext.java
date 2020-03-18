@@ -41,7 +41,10 @@ public class DebugContext implements Runnable {
     this.listener = new XSLTDebugTraceListener(this);
     this.server = server;
     processor = new Processor(false);
+    processor.setConfigurationProperty(Feature.EAGER_EVALUATION, true);
+    processor.setConfigurationProperty(Feature.OPTIMIZATION_LEVEL, 0); // disable variable inlining
     processor.setConfigurationProperty(Feature.LINE_NUMBERING, true);
+    // processor.setConfigurationProperty(Feature.COMPILE_WITH_TRACING, true);
     processor.setConfigurationProperty(Feature.TRACE_LISTENER, listener);
 
     System.setProperty("xspec.coverage.xml", "./xspec-coverage.xml");
@@ -149,6 +152,9 @@ public class DebugContext implements Runnable {
     try {
       transformer.transform(source, destination);
     } catch (SaxonApiException e) {
+      System.out.println(e.getMessage());
+      System.out.println(e.getLineNumber());
+      e.printStackTrace();
       server.sendEvent(new Events.StoppedEvent(e.getLocalizedMessage(), 1));
     } finally {
       this.running = null;

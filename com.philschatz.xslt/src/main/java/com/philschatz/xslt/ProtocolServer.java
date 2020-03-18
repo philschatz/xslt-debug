@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -18,6 +19,15 @@ import com.microsoft.java.debug.core.protocol.Messages.Response;
 import com.microsoft.java.debug.core.protocol.Requests.Arguments;
 import com.microsoft.java.debug.core.protocol.Requests.Command;
 import com.microsoft.java.debug.core.protocol.Types.SourceBreakpoint;
+
+import net.sf.saxon.om.GroundedValue;
+import net.sf.saxon.om.NodeInfo;
+import net.sf.saxon.om.Sequence;
+import net.sf.saxon.om.SequenceIterator;
+import net.sf.saxon.trans.XPathException;
+import net.sf.saxon.type.Type;
+import net.sf.saxon.value.StringValue;
+
 import com.microsoft.java.debug.core.protocol.Messages;
 import com.microsoft.java.debug.core.protocol.Requests;
 import com.microsoft.java.debug.core.protocol.Responses;
@@ -107,12 +117,17 @@ public class ProtocolServer extends AbstractProtocolServer {
       }
     });
 
+    final int LOCAL_VARIABLES = 1;
+    // final int TUNNELED_VARIABLES = 3;
+
     registerHandler(Command.SCOPES, new IDebugRequestHandler() {
       @Override
       public Response handle(Command command, Arguments arguments, Response response, DebugContext context) {
+        Requests.ScopesArguments args = (Requests.ScopesArguments) arguments;
         List<Types.Scope> scopes = new ArrayList<>();
-        scopes.add(new Types.Scope("Local", 1234, false));
-        scopes.add(new Types.Scope("Global", 2345, true));
+        int variablesReference = args.frameId;
+        scopes.add(new Types.Scope("Local", variablesReference, false));
+        // scopes.add(new Types.Scope("Tunneled", TUNNELED_VARIABLES, true));
         response.body = new Responses.ScopesResponseBody(scopes);
         return response;
       }
@@ -121,8 +136,19 @@ public class ProtocolServer extends AbstractProtocolServer {
     registerHandler(Command.VARIABLES, new IDebugRequestHandler() {
       @Override
       public Response handle(Command command, Arguments arguments, Response response, DebugContext context) {
+        Requests.VariablesArguments args = (Requests.VariablesArguments) arguments;
         List<Types.Variable> vars = new ArrayList<>();
-        vars.add(new Types.Variable("varName", "VAR_VALUE", "string", 123, "evaluateName"));
+
+        List<StackFrame> fs = context.getStackFrames();
+        StackFrame s = fs.get(args.variablesReference); // use the frameId (aka variablesReference)
+
+        // Add the context node to the list of variables
+        vars.add(new Types.Variable("(this)", getValue(s.node), getType(s.node), 1, null));
+
+        for (Entry<String, GroundedValue> p : s.variables.entrySet()) {
+          vars.add(new Types.Variable(p.getKey(), getValue(p.getValue()), getType(p.getValue()), vars.size(), null));
+        }
+        
         response.body = new Responses.VariablesResponseBody(vars);
         return response;
       }
@@ -174,5 +200,73 @@ public class ProtocolServer extends AbstractProtocolServer {
       throw new RuntimeException("BUG: Duplicate handler for command. Only supports one for now");
     }
     requestHandlers.put(command, handler);
+  }
+
+  public static String shortString(String msg) {
+    if (msg.length() < 20) {
+      return msg;
+    } else {
+      int len = msg.length();
+      return String.format("%s...%s", msg.substring(0, 8), msg.substring(len - 9, len - 1));
+    }
+  }
+
+  public static String getValue(GroundedValue v) {
+    if (v instanceof NodeInfo) {
+      NodeInfo n = (NodeInfo) v;
+      // Element Attributes do not have source information so use the parent
+      switch (n.getNodeKind()) {
+        case Type.ELEMENT:
+          return String.format("%s @%d:%d", n.getDisplayName(), n.getLineNumber(), n.getColumnNumber());
+        default:
+          NodeInfo p = n.getParent();
+          return String.format("%s @%d:%d", shortString(n.getStringValue()), p.getLineNumber(), p.getColumnNumber());
+      }
+    } else if (v == null) {
+      return "null";
+    } else if (v instanceof StringValue) {
+      return v.toShortString();
+    }
+    try {
+      if (v instanceof Sequence) {
+        Sequence s = (Sequence) v;
+        int i = 0;
+        SequenceIterator si = s.iterate();
+        while ((si.next()) != null) {
+            i++;
+        }
+
+        if (i == 0) {
+          return "[]";
+        } else if (i == 1) {
+          return s.head().getStringValue();
+        } else {
+          return String.format("['%s' ... %d]", getValue(s.head()), i);
+        }
+      }
+      return String.format("%s : %s", v.toShortString(), v.getClass().getSimpleName());
+    } catch (XPathException e) {
+      return String.format("parse error: %s", e.getMessage());
+    }
+  }
+
+  public static String getType(GroundedValue v) {
+    if (v == null) {
+      return "null";
+    } else if (v instanceof NodeInfo) {
+      NodeInfo n = (NodeInfo) v;
+      switch (n.getNodeKind()) {
+        case Type.ELEMENT: return "ELEMENT";
+        case Type.ATTRIBUTE: return "ATTRIBUTE";
+        case Type.TEXT: return "TEXT";
+        case Type.WHITESPACE_TEXT: return "WHITESPACE_TEXT";
+        case Type.PROCESSING_INSTRUCTION: return "PROCESSING_INSTRUCTION";
+        case Type.COMMENT: return "COMMENT";
+        case Type.DOCUMENT: return "DOCUMENT";
+        case Type.NAMESPACE: return "NAMESPACE";
+        default: throw new Error("BUG: Unsupported node type. Add it!");
+      }
+    }
+    return v.getClass().getSimpleName();
   }
 }
