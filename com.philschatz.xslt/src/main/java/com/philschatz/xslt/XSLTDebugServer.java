@@ -23,7 +23,7 @@ public class XSLTDebugServer {
             this.serverSocket = new ServerSocket(port, 1);
             logger.log(Level.INFO, String.format("Started up on port %d", serverSocket.getLocalPort()));
         } catch (IOException e) {
-            logger.log(Level.SEVERE, String.format("Failed to create Java Debug Server: %s", e.toString()), e);
+            logger.log(Level.SEVERE, String.format("Failed to create XSLT Debug Server: %s", e.toString()), e);
         }
     }
 
@@ -60,7 +60,7 @@ public class XSLTDebugServer {
                     }
                 }
 
-            }, "Java Debug Server").start();
+            }, "XSLT Debug Server").start();
         }
     }
 

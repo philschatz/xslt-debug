@@ -72,19 +72,40 @@
           <version>2.22.1</version>
         </plugin>
         <plugin>
+          <artifactId>maven-assembly-plugin</artifactId>
+          <version>3.0.0</version>
+          <configuration>
+            <descriptorRefs>
+              <descriptorRef>jar-with-dependencies</descriptorRef>
+            </descriptorRefs>
+            <archive>
+              <manifest>
+                <mainClass>com.philschatz.xslt.App</mainClass>
+              </manifest>
+            </archive>
+          </configuration>
+          <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+          </execution>
+          </executions>
+        </plugin>
+        <!-- <plugin>
           <artifactId>maven-jar-plugin</artifactId>
           <version>3.0.2</version>
           <configuration>
             <archive>
               <manifest>
-                <!-- Jar file entry point -->
                 <mainClass>com.philschatz.xslt.App</mainClass>
                 <addClasspath>true</addClasspath>
                 <classpathPrefix>dependency-jars/</classpathPrefix>
               </manifest>
             </archive>
           </configuration>
-        </plugin>
+        </plugin> -->
         <!-- Copy project dependency -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -98,7 +119,6 @@
               <goal>copy-dependencies</goal>
             </goals>
             <configuration>
-              <!-- exclude junit, we need runtime dependency only -->
               <includeScope>runtime</includeScope>
               <outputDirectory>${project.build.directory}/dependency-jars/</outputDirectory>
             </configuration>
