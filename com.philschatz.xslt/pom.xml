@@ -8,6 +8,8 @@
   <artifactId>com.philschatz.xslt</artifactId>
   <version>1.0-SNAPSHOT</version>
 
+  <packaging>jar</packaging>
+
   <name>com.philschatz.xslt</name>
   <!-- FIXME change it to the project's website -->
   <url>http://www.example.com</url>
@@ -64,6 +66,36 @@
         <plugin>
           <artifactId>maven-jar-plugin</artifactId>
           <version>3.0.2</version>
+          <configuration>
+            <archive>
+              <manifest>
+                <!-- Jar file entry point -->
+                <mainClass>com.philschatz.xslt.App</mainClass>
+                <addClasspath>true</addClasspath>
+                <classpathPrefix>dependency-jars/</classpathPrefix>
+              </manifest>
+            </archive>
+          </configuration>
+        </plugin>
+        <!-- Copy project dependency -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>2.5.1</version>
+          <executions>
+            <execution>
+            <id>copy-dependencies</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <!-- exclude junit, we need runtime dependency only -->
+              <includeScope>runtime</includeScope>
+              <outputDirectory>${project.build.directory}/dependency-jars/</outputDirectory>
+            </configuration>
+            </execution>
+          </executions>
         </plugin>
         <plugin>
           <artifactId>maven-install-plugin</artifactId>
