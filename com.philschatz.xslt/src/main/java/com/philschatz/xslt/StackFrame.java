@@ -1,5 +1,6 @@
 package com.philschatz.xslt;
 
+import java.util.List;
 import java.util.Map;
 
 import net.sf.saxon.om.GroundedValue;
@@ -8,24 +9,30 @@ import net.sf.saxon.om.Sequence;
 import net.sf.saxon.trans.XPathException;
 import net.sf.saxon.value.StringValue;
 
-public class StackFrame {
+public class StackFrame extends Variable {
   public final String systemId;
   public final int lineNumber;
   public final int columnNumber;
   public final String construct;
-  public final NodeInfo node;
   public final Map<String, GroundedValue> parameters;
-  public final Map<String, GroundedValue> variables;
+  public final List<Variable> variables;
 
-  StackFrame(final String systemId, final int lineNumber, final int columnNumber, final String construct,
-      final NodeInfo node, final Map<String, GroundedValue> parameters, final Map<String, GroundedValue> variables) {
+  StackFrame(ObjectPool<ObjectPool.Unit, Variable> pool, final String systemId, final int lineNumber, final int columnNumber, final String construct,
+      final NodeInfo node, final Map<String, GroundedValue> parameters, final List<Variable> variables) {
+        super("I_AM_A_SCOPE_NOT_A_VARIABLE", null, pool);
     this.systemId = systemId;
     this.lineNumber = lineNumber;
     this.columnNumber = columnNumber;
     this.construct = construct;
-    this.node = node;
     this.parameters = parameters;
     this.variables = variables;
+    // Add the context node to the list of variables
+    this.variables.add(0, new Variable("(this)", node, pool));
+  }
+
+  @Override
+  public List<Variable> getChildren() {
+    return variables;
   }
 
   public static String convert(final Object o) {

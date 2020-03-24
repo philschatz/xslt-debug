@@ -2,9 +2,6 @@ package com.philschatz.xslt;
 
 import java.io.File;
 import java.util.List;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import javax.xml.transform.ErrorListener;
 import javax.xml.transform.SourceLocator;
@@ -13,7 +10,6 @@ import javax.xml.transform.stream.StreamSource;
 
 import com.microsoft.java.debug.core.protocol.Events;
 import com.microsoft.java.debug.core.protocol.Types;
-import com.microsoft.java.debug.core.protocol.Events.OutputEvent.Category;
 
 import net.sf.saxon.lib.Feature;
 import net.sf.saxon.s9api.MessageListener2;
@@ -127,6 +123,10 @@ public class DebugContext implements Runnable {
 
   public List<StackFrame> getStackFrames() {
     return listener.getStackFrames();
+  }
+
+  public Variable getVariableById(long id) {
+    return listener.variablesPool.getById(id);
   }
 
   public void unpause() {

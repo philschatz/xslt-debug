@@ -41,6 +41,9 @@ public class XSLTDebugTraceListener implements TraceListener {
   private final Stack<StackFrame> instructionStack = new Stack<StackFrame>();
   private final Stack<Item> nodeStack = new Stack<Item>();
 
+  private final ObjectPool<Long, StackFrame> stackframePool = new ObjectPool<>();
+  public final ObjectPool<ObjectPool.Unit, Variable> variablesPool = new ObjectPool<>();
+
   private final Object lock = new Object();
   private boolean paused;
 
@@ -52,6 +55,7 @@ public class XSLTDebugTraceListener implements TraceListener {
   public void unpause() {
     synchronized (lock) {
       paused = false;
+      variablesPool.clear();
     }
   }
 
@@ -221,15 +225,15 @@ public class XSLTDebugTraceListener implements TraceListener {
       }
     }
 
-    final Map<String, GroundedValue> variables = new HashMap<>();
+    final List<Variable> variables = new ArrayList<>();
     p = 0;
     for (final Sequence v : context.getStackFrame().getStackFrameValues()) {
       final String name = context.getStackFrame().getStackFrameMap().getVariableMap().get(p).getClarkName();
       try {
         if (v != null) {
-          variables.put(name, v.iterate().materialize());
+          variables.add(new Variable(name, v.iterate().materialize(), variablesPool));
         } else {
-          variables.put(name, null);
+          variables.add(new Variable(name, null, variablesPool));
         }
         p++;
       } catch (XPathException e) {
@@ -238,7 +242,7 @@ public class XSLTDebugTraceListener implements TraceListener {
     }
 
     synchronized (lock) {
-      instructionStack.push(new StackFrame(systemId, lineNumber, columnNumber, construct, node, parameters, variables));
+      instructionStack.push(new StackFrame(variablesPool, systemId, lineNumber, columnNumber, construct, node, parameters, variables));
     }
 
     for (final XSLTBreakpoint b : breakpoints) {
@@ -267,9 +271,12 @@ public class XSLTDebugTraceListener implements TraceListener {
   public void leave(final InstructionInfo instruction) {
     // System.err.println(String.format("LEAVING %d:%d",
     // instruction.getLineNumber(), instruction.getColumnNumber()));
-    synchronized (lock) {
-      instructionStack.pop();
-    }
+    // synchronized (lock) {
+    //   StackFrame top = instructionStack.pop();
+    //   for (Variable v : top.getChildren()) {
+    //     variablesPool.removeAllOwnedBy(v);
+    //   }
+    // }
   }
 
   /**
