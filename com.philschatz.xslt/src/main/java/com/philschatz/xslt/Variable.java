@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.microsoft.java.debug.core.protocol.Types;
+import com.philschatz.xslt.ExtraTypesVariable.SourceLocation;
 import com.philschatz.xslt.ObjectPool.Unit;
 
 import net.sf.saxon.om.AxisInfo;
@@ -37,7 +38,7 @@ public class Variable {
   
   public Types.Variable toResponse() {
     int childPtr =_getChilds().size() > 0 ? (int) id : 0;
-    return new Types.Variable(getKey(), getValue(), getType(), childPtr, "HELP_EVALUATENAME");
+    return new ExtraTypesVariable(getKey(), getValue(), getType(), childPtr, getSource(this.v));
   }
 
   public List<Variable> getChildren() {
@@ -154,6 +155,31 @@ public class Variable {
     }
   }
 
+  public static SourceLocation getSource(GroundedValue v) {
+    if (v instanceof NodeInfo) {
+      NodeInfo n = (NodeInfo) v;
+      // Element Attributes do not have source information so use the parent
+      switch (n.getNodeKind()) {
+        case Type.DOCUMENT:
+        case Type.ELEMENT:
+        case Type.PROCESSING_INSTRUCTION:
+        case Type.COMMENT:
+        case Type.NAMESPACE:
+        case Type.TEXT:
+        case Type.WHITESPACE_TEXT:
+        case Type.ATTRIBUTE:
+        default:
+          if (n.getLineNumber() < 0) {
+            NodeInfo p = n.getParent();
+            return new SourceLocation(n.getSystemId(), p.getLineNumber(), p.getColumnNumber());
+          }
+          return new SourceLocation(n.getSystemId(), n.getLineNumber(), n.getColumnNumber());
+      }
+    } else {
+      return null;
+    }
+  }
+
   public static String getType(GroundedValue v) {
     if (v == null) {
       return "null";
@@ -173,5 +199,5 @@ public class Variable {
     }
     return v.getClass().getSimpleName();
   }
-  
+ 
 }
